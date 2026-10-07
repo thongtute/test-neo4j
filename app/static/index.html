@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cắt video → Neo4j</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #0b7a75; --accent-soft: #e2f3f2; --warn: #b5650d; --err: #c0392b; --ok: #2e8540;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1d2128; --text:#e8eaef; --muted:#9aa2b1; --line:#2c323c;
+            --accent:#3cc2b9; --accent-soft:#16312f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px; border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { font-size:18px; margin:0; }
+  header a { color:var(--accent); text-decoration:none; font-weight:600; }
+  main { display:grid; grid-template-columns: 340px 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding:16px; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input[type=number], input[type=file] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--text); font:inherit; }
+  .seg-toggle { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:4px; }
+  .seg-toggle button { flex:1; border:0; padding:8px; background:transparent; color:var(--text); cursor:pointer; font:inherit; }
+  .seg-toggle button.on { background:var(--accent); color:#fff; }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  .btn { display:inline-block; border:0; border-radius:7px; padding:9px 14px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .btn.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .btn.danger { background:transparent; color:var(--err); border:1px solid var(--err); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:8px; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .vlist { list-style:none; margin:0; padding:0; }
+  .vlist li { padding:10px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
+  .vlist li:hover { background:var(--accent-soft); }
+  .vlist li.sel { border-color:var(--accent); background:var(--accent-soft); }
+  .vname { font-weight:600; word-break:break-all; }
+  .meta { font-size:12px; color:var(--muted); }
+  .pill { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:10px; text-transform:uppercase; letter-spacing:.03em; }
+  .pill.done { background:#dff3e4; color:var(--ok); } .pill.error { background:#fbe3e0; color:var(--err); }
+  .pill.processing, .pill.queued { background:#fdf0dc; color:var(--warn); }
+  .detail-head { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; justify-content:space-between; }
+  .detail-head h2 { margin:0; word-break:break-all; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .player { margin:14px 0; background:#000; border-radius:8px; overflow:hidden; display:none; }
+  .player video { width:100%; max-height:420px; display:block; }
+  .player .cap { background:var(--card); padding:8px 10px; font-size:13px; border:1px solid var(--line); border-top:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; margin-top:12px; }
+  .seg { border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--card); }
+  .seg img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#000; cursor:pointer; }
+  .seg .info { padding:8px 10px; font-size:13px; }
+  .seg .tc { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .seg .sim { font-size:12px; color:var(--warn); margin-top:4px; }
+  .seg .row { display:flex; gap:6px; margin-top:6px; }
+  .seg .row button, .seg .row a { flex:1; font-size:12px; padding:4px; border:1px solid var(--line); border-radius:5px; background:transparent; color:var(--text); cursor:pointer; text-align:center; text-decoration:none; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; font-size:12px; white-space:pre-wrap; }
+  .empty { color:var(--muted); text-align:center; padding:40px 10px; }
+  .resplit { display:none; margin-top:12px; padding:12px; border:1px dashed var(--line); border-radius:8px; }
+  .resplit .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--text); color:var(--bg); padding:10px 14px; border-radius:8px; font-size:14px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  .err { color:var(--err); font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>✂️ Cắt video → Neo4j</h1>
+  <a id="neo4jLink" href="http://localhost:7474" target="_blank" rel="noopener">Mở Neo4j Browser ↗</a>
+</header>
+
+<main>
+  <div>
+    <section class="card">
+      <h2>Tải video lên</h2>
+      <form id="upForm">
+        <input type="file" id="file" accept="video/*" required>
+        <label>Cách cắt</label>
+        <div class="seg-toggle" id="modeToggle">
+          <button type="button" data-mode="scene" class="on">Theo cảnh</button>
+          <button type="button" data-mode="fixed">Mỗi N giây</button>
+        </div>
+        <div id="sceneFields">
+          <label for="threshold">Độ nhạy dò cảnh (0.01 – 0.99)</label>
+          <input type="number" id="threshold" value="0.3" min="0.01" max="0.99" step="0.01">
+          <div class="hint">Nhỏ hơn = cắt nhiều đoạn hơn. 0.3 hợp với đa số video.</div>
+          <label for="minLen">Độ dài tối thiểu mỗi đoạn (giây)</label>
+          <input type="number" id="minLen" value="1" min="0" max="600" step="0.5">
+        </div>
+        <div id="fixedFields" style="display:none">
+          <label for="seconds">Độ dài mỗi đoạn (giây)</label>
+          <input type="number" id="seconds" value="10" min="0.5" max="3600" step="0.5">
+        </div>
+        <div style="margin-top:14px"><button class="btn" id="upBtn" type="submit">Tải lên &amp; cắt</button></div>
+        <div class="bar" id="upBar" style="display:none"><div></div></div>
+        <div class="err" id="upErr"></div>
+      </form>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Video đã tải</h2>
+      <ul class="vlist" id="vlist"><li class="meta">Đang tải...</li></ul>
+    </section>
+  </div>
+
+  <section class="card" id="detail">
+    <div class="empty">Chọn một video bên trái để xem các đoạn đã cắt.</div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtSize = b => b > 1e9 ? (b/1e9).toFixed(2)+" GB" : b > 1e6 ? (b/1e6).toFixed(1)+" MB" : Math.round((b||0)/1e3)+" KB";
+const fmtDur = s => { s = Math.round(s||0); const m = Math.floor(s/60); return m ? `${m}p ${s%60}s` : `${s}s`; };
+const STATUS = {queued:"chờ", processing:"đang cắt", done:"xong", error:"lỗi"};
+let mode = "scene", selected = null, pollTimer = null;
+
+$("#neo4jLink").href = `http://${location.hostname}:7474`;
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2000); }
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast("Đã chép câu lệnh Cypher"); }
+  catch { prompt("Chép câu lệnh:", text); }
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.json();
+}
+
+// ---- upload ----
+$("#modeToggle").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  mode = b.dataset.mode;
+  document.querySelectorAll("#modeToggle button").forEach(x => x.classList.toggle("on", x === b));
+  $("#sceneFields").style.display = mode === "scene" ? "" : "none";
+  $("#fixedFields").style.display = mode === "fixed" ? "" : "none";
+});
+
+$("#upForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const f = $("#file").files[0]; if (!f) return;
+  const fd = new FormData();
+  fd.append("file", f); fd.append("mode", mode);
+  fd.append("threshold", $("#threshold").value); fd.append("min_len", $("#minLen").value);
+  fd.append("seconds", $("#seconds").value);
+  const xhr = new XMLHttpRequest();
+  const bar = $("#upBar"), fill = bar.firstElementChild;
+  bar.style.display = "block"; fill.style.width = "0"; $("#upBtn").disabled = true; $("#upErr").textContent = "";
+  xhr.upload.onprogress = ev => { if (ev.lengthComputable) fill.style.width = (ev.loaded/ev.total*100) + "%"; };
+  xhr.onload = () => {
+    $("#upBtn").disabled = false; bar.style.display = "none";
+    let res = {}; try { res = JSON.parse(xhr.responseText); } catch {}
+    if (xhr.status >= 300) { $("#upErr").textContent = res.detail || "Tải lên thất bại"; return; }
+    $("#file").value = ""; selected = res.id; refresh();
+  };
+  xhr.onerror = () => { $("#upBtn").disabled = false; bar.style.display = "none"; $("#upErr").textContent = "Mất kết nối tới server"; };
+  xhr.open("POST", "/api/videos"); xhr.send(fd);
+});
+
+// ---- list + detail ----
+async function refresh() {
+  let videos = [];
+  try { videos = await api("/api/videos"); } catch (e) { $("#vlist").innerHTML = `<li class="err">${esc(e.message)}</li>`; return schedule(5000); }
+  $("#vlist").innerHTML = videos.length ? videos.map(v => `
+    <li data-id="${esc(v.id)}" class="${v.id === selected ? "sel" : ""}">
+      <div class="vname">${esc(v.filename)}</div>
+      <div class="meta"><span class="pill ${esc(v.status)}">${STATUS[v.status] || esc(v.status)}</span>
+        ${v.status === "processing" ? (v.progress||0) + "% · " : ""}${v.segment_count} đoạn · ${fmtDur(v.duration)}</div>
+    </li>`).join("") : `<li class="meta">Chưa có video nào.</li>`;
+  if (selected) await showDetail(selected);
+  schedule(videos.some(v => v.status === "queued" || v.status === "processing") ? 2000 : 15000);
+}
+function schedule(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(refresh, ms); }
+
+$("#vlist").addEventListener("click", e => {
+  const li = e.target.closest("li[data-id]"); if (!li) return;
+  selected = li.dataset.id; lastRendered = null;
+  document.querySelectorAll("#vlist li").forEach(x => x.classList.toggle("sel", x === li));
+  showDetail(selected);
+});
+
+let lastRendered = null;
+async function showDetail(id) {
+  let v;
+  try { v = await api(`/api/videos/${id}`); } catch (e) { $("#detail").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const key = JSON.stringify([v.status, v.progress, v.segments.length, v.error]);
+  if (key === lastRendered) return;           // tránh vẽ lại làm dừng video đang xem
+  lastRendered = key;
+  let params = {}; try { params = JSON.parse(v.split_params || "{}"); } catch {}
+  const how = params.mode === "fixed" ? `mỗi ${params.seconds}s` : params.mode === "scene" ? `theo cảnh, độ nhạy ${params.threshold}` : "";
+  const cypher = `MATCH p=(v:Video {id:'${v.id}'})-[:HAS_SEGMENT]->(s:Segment)\nRETURN p`;
+
+  $("#detail").innerHTML = `
+    <div class="detail-head">
+      <div>
+        <h2>${esc(v.filename)}</h2>
+        <div class="meta">id: <b>${esc(v.id)}</b> · ${fmtDur(v.duration)} · ${v.width||"?"}×${v.height||"?"} · ${v.fps||"?"} fps · ${fmtSize(v.size_bytes)}${how ? " · cắt " + esc(how) : ""}</div>
+        <div class="meta" style="margin-top:4px"><span class="pill ${esc(v.status)}">${STATUS[v.status] || esc(v.status)}</span>
+          ${v.status === "processing" ? `${v.progress||0}%` : ""}</div>
+        ${v.status === "processing" || v.status === "queued" ? `<div class="bar"><div style="width:${v.progress||0}%"></div></div>` : ""}
+        ${v.error ? `<div class="err">${esc(v.error)}</div>` : ""}
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="cyBtn">Chép Cypher</button>
+        <button class="btn ghost" id="rsBtn" ${v.status==="processing"||v.status==="queued"?"disabled":""}>Cắt lại</button>
+        <button class="btn danger" id="delBtn" ${v.status==="processing"?"disabled":""}>Xoá</button>
+      </div>
+    </div>
+    <div class="resplit" id="rsBox">
+      <div class="fields">
+        <div><label>Cách cắt</label>
+          <select id="rsMode" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--text)">
+            <option value="scene">Theo cảnh</option><option value="fixed">Mỗi N giây</option></select></div>
+        <div><label>Độ nhạy (cảnh)</label><input type="number" id="rsTh" value="${params.threshold ?? 0.3}" step="0.01" min="0.01" max="0.99"></div>
+        <div><label>Tối thiểu (giây)</label><input type="number" id="rsMin" value="${params.min_len ?? 1}" step="0.5" min="0"></div>
+        <div><label>Mỗi N giây</label><input type="number" id="rsSec" value="${params.seconds ?? 10}" step="0.5" min="0.5"></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="rsGo">Bắt đầu cắt lại</button></div>
+    </div>
+    <div class="player" id="player"><video controls playsinline></video><div class="cap"></div></div>
+    ${v.segments.length ? `<div class="grid">${v.segments.map(segCard).join("")}</div>`
+      : `<div class="empty">${v.status === "done" ? "Không có đoạn nào." : "Các đoạn sẽ hiện ở đây khi cắt xong."}</div>`}
+    <h2 style="margin-top:20px;font-size:14px">Xem đồ thị trong Neo4j Browser</h2>
+    <pre>${esc(cypher)}</pre>`;
+
+  $("#cyBtn").onclick = () => copy(cypher);
+  $("#delBtn").onclick = async () => {
+    if (!confirm("Xoá video này cùng toàn bộ đoạn cắt và node trong Neo4j?")) return;
+    try { await api(`/api/videos/${v.id}`, {method:"DELETE"}); selected = null; lastRendered = null;
+      $("#detail").innerHTML = `<div class="empty">Đã xoá.</div>`; refresh(); } catch (e) { toast(e.message); }
+  };
+  $("#rsBtn").onclick = () => { const b = $("#rsBox"); b.style.display = b.style.display === "block" ? "none" : "block"; };
+  $("#rsMode").value = params.mode || "scene";
+  $("#rsGo").onclick = async () => {
+    const body = { mode: $("#rsMode").value, threshold: +$("#rsTh").value, min_len: +$("#rsMin").value, seconds: +$("#rsSec").value };
+    try { await api(`/api/videos/${v.id}/resplit`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+      lastRendered = null; refresh(); } catch (e) { toast(e.message); }
+  };
+  document.querySelectorAll("[data-play]").forEach(el => el.onclick = () => play(v.segments[+el.dataset.play]));
+  document.querySelectorAll("[data-cy]").forEach(el => el.onclick = () => copy(
+    `MATCH (s:Segment {id:'${el.dataset.cy}'})\nOPTIONAL MATCH (s)-[r]-(x)\nRETURN s, r, x`));
+}
+
+const shortTc = tc => String(tc || "").replace(/^00:/, "");
+function segCard(s, i) {
+  const sim = (s.similar || [])
+    .sort((a, b) => (a.video_id !== s.video_id) - (b.video_id !== s.video_id) || a.index - b.index)
+    .map(o => o.video_id === s.video_id ? `đoạn #${o.index}` : `${esc(o.video_name || o.video_id)} #${o.index}`)
+    .join(" · ");
+  return `<div class="seg">
+    <img src="${esc(s.thumbnail_url)}" loading="lazy" alt="Đoạn ${s.index}" data-play="${i}">
+    <div class="info">
+      <b>Đoạn ${s.index}</b> · ${s.duration.toFixed(1)}s
+      <div class="tc">${esc(shortTc(s.start_tc))} → ${esc(shortTc(s.end_tc))}</div>
+      ${sim ? `<div class="sim">Giống: ${sim}</div>` : ""}
+      <div class="row">
+        <button data-play="${i}">▶ Xem</button>
+        <button data-cy="${esc(s.id)}">Cypher</button>
+        <a href="${esc(s.url)}" download>Tải</a>
+      </div>
+    </div></div>`;
+}
+
+function play(s) {
+  const p = $("#player"), vid = p.querySelector("video");
+  p.style.display = "block"; vid.src = s.url; vid.play().catch(() => {});
+  p.querySelector(".cap").innerHTML = `Đoạn <b>${s.index}</b> · ${esc(s.start_tc)} → ${esc(s.end_tc)} · node id <code>${esc(s.id)}</code>`;
+  p.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+refresh();
+</script>
+</body>
+</html>
